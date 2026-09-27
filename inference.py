@@ -45,14 +45,30 @@ class InferenceEngine:
             logger.error(f"Failed to load TFLite model: {e}")
             self.use_fallback = True
 
+    def preprocess(self, sensor_values: list[float]) -> list[float]:
+        """
+        Preprocesses sensor values before inference.
+        Ensures all values are clamped to typical voltage ranges (0.0 - 5.0)
+        and normalized if required by the model pipeline.
+        """
+        # Clamp values between 0.0 and 5.0
+        clamped = [max(0.0, min(5.0, v)) for v in sensor_values]
+        
+        # In a real model, standard scaler (mean, std) would be applied here.
+        # For now, we return the clamped raw voltages (or normalized 0-1 if model expects it).
+        # We will assume the model expects raw voltages 0-5V.
+        return clamped
+
     def predict(self, sensor_values: list[float]) -> str:
         """
         Runs TFLite inference or fallback logic.
         Args:
             sensor_values: [mics5524_v, tgs2600_v, mq2_v, mq135_v]
         """
+        preprocessed_values = self.preprocess(sensor_values)
+        
         if self.use_fallback:
-            return self._fallback_logic(sensor_values)
+            return self._fallback_logic(preprocessed_values)
             
         import numpy as np
         
