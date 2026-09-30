@@ -1,0 +1,2 @@
+✨ feat(iot): add background heartbeat thread for production device tracking
+🔒 security(iot): strip simulation dummy data and strictly enforce physical sensor reading
