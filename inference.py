@@ -1,5 +1,7 @@
 import os
 import logging
+import pickle
+import numpy as np
 
 logger = logging.getLogger("siparta.ai_models")
 
@@ -19,12 +21,15 @@ except ImportError:
 class InferenceEngine:
     def __init__(self, model_path: str = "model/siparta_ann.tflite"):
         self.model_path = model_path
+        self.scaler_path = os.path.join(os.path.dirname(model_path), "siparta_scaler.pkl")
         self.interpreter = None
         self.input_details = None
         self.output_details = None
+        self.scaler = None
         self.use_fallback = not TFLITE_AVAILABLE
         
         self._load_model()
+        self._load_scaler()
 
     def _load_model(self):
         if self.use_fallback:
@@ -45,19 +50,29 @@ class InferenceEngine:
             logger.error(f"Failed to load TFLite model: {e}")
             self.use_fallback = True
 
-    def preprocess(self, sensor_values: list[float]) -> list[float]:
+    def _load_scaler(self):
+        if not self.use_fallback and os.path.exists(self.scaler_path):
+            try:
+                with open(self.scaler_path, 'rb') as f:
+                    self.scaler = pickle.load(f)
+                logger.info(f"Scaler loaded successfully from {self.scaler_path}")
+            except Exception as e:
+                logger.error(f"Failed to load scaler: {e}")
+
+    def preprocess(self, sensor_values: list[float]) -> np.ndarray:
         """
         Preprocesses sensor values before inference.
         Ensures all values are clamped to typical voltage ranges (0.0 - 5.0)
-        and normalized if required by the model pipeline.
+        and normalized using the trained scaler.
         """
         # Clamp values between 0.0 and 5.0
         clamped = [max(0.0, min(5.0, v)) for v in sensor_values]
         
-        # In a real model, standard scaler (mean, std) would be applied here.
-        # For now, we return the clamped raw voltages (or normalized 0-1 if model expects it).
-        # We will assume the model expects raw voltages 0-5V.
-        return clamped
+        input_data = np.array([clamped], dtype=np.float32)
+        if self.scaler:
+            input_data = self.scaler.transform(input_data).astype(np.float32)
+            
+        return input_data
 
     def predict(self, sensor_values: list[float]) -> str:
         """
@@ -65,20 +80,15 @@ class InferenceEngine:
         Args:
             sensor_values: [mics5524_v, tgs2600_v, mq2_v, mq135_v]
         """
-        preprocessed_values = self.preprocess(sensor_values)
-        
         if self.use_fallback:
-            return self._fallback_logic(preprocessed_values)
+            return self._fallback_logic(sensor_values)
             
-        import numpy as np
-        
         try:
-            input_data = np.array([sensor_values], dtype=np.float32)
+            input_data = self.preprocess(sensor_values)
             self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
             self.interpreter.invoke()
             output = self.interpreter.get_tensor(self.output_details[0]['index'])[0]
             
-            # Assuming output is one-hot encoded or probabilities for ["AMAN", "WASPADA", "BAHAYA"]
             classes = ["AMAN", "WASPADA", "BAHAYA"]
             idx = np.argmax(output)
             return classes[idx]
@@ -109,3 +119,4 @@ def run_inference(sensor_values: list[float], model_path: str = None) -> str:
         _engine = InferenceEngine(model_path)
     
     return _engine.predict(sensor_values)
+

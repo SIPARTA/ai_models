@@ -1,17 +1,8 @@
 """
 SIPARTA — Edge Computing Script (Raspberry Pi 3 B+)
 =====================================================
-Script ini berjalan di perangkat IoT edge (RPi) dan bertugas:
-
-  1. Membaca tegangan dari 4 sensor gas via ADC ADS1115 (I2C)
-  2. Menjalankan inferensi ANN (TFLite) untuk klasifikasi gas
-  3. Mengontrol aktuator (LED RGB, Buzzer)
-  4. Mengirim laporan insiden ke FastAPI Backend (HTTP POST multipart)
-     → Backend yang kemudian menangani: Supabase + Gemini AI + Blockchain
-
-Alur Lengkap (sesuai architecture_design.md Section 8):
-  [RPi] → POST /api/v1/incidents/report → [FastAPI]
-         → [Supabase] + [Gemini AI] + [relay.ts → Polygon Amoy]
+Script IoT edge (RPi) untuk membaca sensor, inferensi ANN, 
+kontrol aktuator, dan pengiriman laporan insiden ke FastAPI Backend.
 
 Koneksi I2C Sensor → ADS1115 → RPi:
   ADS1115 P0 → MICS-5524  (Gas umum / CO)
@@ -46,7 +37,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from ai_models.inference import run_inference
 
-# ─── Deteksi environment (RPi fisik atau mode simulasi PC) ──────────────────
+# Inisialisasi Environment
 try:
     import RPi.GPIO as GPIO
     import board
@@ -73,7 +64,7 @@ BUZZER     = 24   # Active buzzer alarm
 # ============================================================
 
 # URL FastAPI Backend — ganti dengan IP server produksi atau Render URL
-_API_BASE = os.getenv("SIPARTA_BACKEND_URL", "http://192.168.1.100:8000")
+_API_BASE = os.getenv("SIPARTA_BACKEND_URL", "https://siparta-backend.onrender.com")
 API_URL = f"{_API_BASE}/api/v1/incidents/report"
 
 # API Key untuk autentikasi ke backend (harus sama dengan DEVICE_API_KEY di backend .env)
@@ -278,12 +269,39 @@ def _set_leds_and_buzzer(status: str):
         GPIO.output(LED_RED, GPIO.HIGH)
         GPIO.output(BUZZER, GPIO.HIGH)
 
+# ============================================================
+# HEARTBEAT BACKGROUND THREAD
+# ============================================================
+import threading
+
+def _heartbeat_worker():
+    """Background thread untuk mengirim heartbeat ke backend setiap 30 detik."""
+    heartbeat_url = f"{_API_BASE}/api/v1/devices/heartbeat"
+    headers = {}
+    if DEVICE_API_KEY:
+        headers["X-API-Key"] = DEVICE_API_KEY
+    payload = {"device_id": DEVICE_ID}
+    
+    while True:
+        try:
+            res = requests.post(heartbeat_url, json=payload, headers=headers, timeout=5)
+            if res.status_code != 200:
+                logger.error(f"[HEARTBEAT] Backend mengembalikan status {res.status_code}")
+        except Exception as e:
+            logger.error(f"[HEARTBEAT] Gagal mengirim heartbeat: {e}")
+        time.sleep(30.0)
 
 # ============================================================
 # MAIN LOOP
 # ============================================================
 
 def main():
+    if not IS_RPI:
+        logger.error("FATAL: Perangkat keras RPi (GPIO/I2C) tidak terdeteksi.")
+        logger.error("Mode produksi tidak mengizinkan pengiriman data simulasi.")
+        logger.error("Aplikasi dihentikan untuk mencegah polusi data di production.")
+        return
+
     setup_gpio()
 
     try:
@@ -292,17 +310,14 @@ def main():
         logger.error(f"Gagal inisialisasi I2C / ADC ADS1115: {e}")
         return
 
-    logger.info("Sistem SIPARTA Menunggu Aktivasi (Tekan Push Button)...")
-
-    # Tunggu tombol hardware sebelum menyala penuh
-    if IS_RPI:
-        while GPIO.input(BTN_PIN) == GPIO.HIGH:
-            time.sleep(0.1)
-
-    logger.info("Sistem SIPARTA Aktif!")
+    logger.info("Sistem SIPARTA Aktif! (Production Mode)")
     logger.info(f"Backend URL  : {API_URL}")
-    logger.info(f"Device ID    : {DEVICE_ID or '(tidak diset — gunakan DEVICE_ID di .env)'}")
-    logger.info(f"API Key Auth : {'aktif' if DEVICE_API_KEY else 'dinonaktifkan (dev mode)'}")
+    logger.info(f"Device ID    : {DEVICE_ID or '(tidak diset)'}")
+    
+    # Start heartbeat thread
+    hb_thread = threading.Thread(target=_heartbeat_worker, daemon=True)
+    hb_thread.start()
+    logger.info("Heartbeat thread dimulai.")
 
     warm_up_routine(duration=60)
 
@@ -312,17 +327,16 @@ def main():
 
     try:
         while True:
-            # ── Pembacaan Sensor ──────────────────────────────────────────────
-            if IS_RPI:
+            # ── Pembacaan Sensor Fisik ──────────────────────────────────────────────
+            try:
                 sensor_data = [ch0.voltage, ch1.voltage, ch2.voltage, ch3.voltage]
-            else:
-                # Mode simulasi: data acak 1.0 – 3.5 Volt
-                sensor_data = list(np.random.uniform(1.0, 3.5, 4))
+            except Exception as e:
+                logger.error(f"Gagal membaca sensor fisik: {e}")
+                time.sleep(2.0)
+                continue
 
             v0, v1, v2, v3 = sensor_data
-            logger.info(
-                f"Sensors [MICS={v0:.2f}V, TGS={v1:.2f}V, MQ2={v2:.2f}V, MQ135={v3:.2f}V]"
-            )
+            logger.info(f"Sensors [MICS={v0:.2f}V, TGS={v1:.2f}V, MQ2={v2:.2f}V, MQ135={v3:.2f}V]")
 
             # ── Inferensi ANN ─────────────────────────────────────────────────
             status = run_inference(sensor_data)
@@ -364,3 +378,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

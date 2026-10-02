@@ -50,4 +50,6 @@ tb_logs/
 .idea/
 *.swp
 .DS_Store
-Thumbs.db
+Thumbs.db!model/*.h5
+!model/*.pkl
+!siparta_sensor_dataset.csv
