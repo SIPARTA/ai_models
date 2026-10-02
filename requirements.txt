@@ -9,7 +9,7 @@ scikit-learn
 # tflite-runtime       # Pengganti tensorflow penuh; sangat esensial untuk RAM 1GB RPi 3B+
 # tensorflow-cpu         # (jika melatih/export model di PC Server)
 tensorflow             # (Butuh koneksi alat deteksi SIPARTA)
-
+pydot
 
 # === 2. Computer Vision & Real-Time Object Detection ===
 opencv-python-headless # Headless lebih ringan (tanpa library GUI desktop X11)
