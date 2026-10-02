@@ -1,17 +1,8 @@
 """
 SIPARTA — Edge Computing Script (Raspberry Pi 3 B+)
 =====================================================
-Script ini berjalan di perangkat IoT edge (RPi) dan bertugas:
-
-  1. Membaca tegangan dari 4 sensor gas via ADC ADS1115 (I2C)
-  2. Menjalankan inferensi ANN (TFLite) untuk klasifikasi gas
-  3. Mengontrol aktuator (LED RGB, Buzzer)
-  4. Mengirim laporan insiden ke FastAPI Backend (HTTP POST multipart)
-     → Backend yang kemudian menangani: Supabase + Gemini AI + Blockchain
-
-Alur Lengkap (sesuai architecture_design.md Section 8):
-  [RPi] → POST /api/v1/incidents/report → [FastAPI]
-         → [Supabase] + [Gemini AI] + [relay.ts → Polygon Amoy]
+Script IoT edge (RPi) untuk membaca sensor, inferensi ANN, 
+kontrol aktuator, dan pengiriman laporan insiden ke FastAPI Backend.
 
 Koneksi I2C Sensor → ADS1115 → RPi:
   ADS1115 P0 → MICS-5524  (Gas umum / CO)
@@ -46,7 +37,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from ai_models.inference import run_inference
 
-# ─── Deteksi environment (RPi fisik atau mode simulasi PC) ──────────────────
+# Inisialisasi Environment
 try:
     import RPi.GPIO as GPIO
     import board
