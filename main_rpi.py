@@ -186,8 +186,8 @@ def send_report_to_backend(
 
     Backend yang akan meneruskan ke:
       - Supabase (penyimpanan)
-      - Google Gemini AI (analisis gambar)
-      - Polygon Amoy (blockchain anchoring)
+      - Google Gemini AI
+      - Polygon Amoy (blockchain)
 
     Args:
         sensor_data  : [mics5524_v, tgs2600_v, mq2_v, mq135_v]
@@ -329,14 +329,14 @@ def main():
         while True:
             # ── Pembacaan Sensor Fisik ──────────────────────────────────────────────
             try:
-                sensor_data = [ch0.voltage, ch1.voltage, ch2.voltage, ch3.voltage]
+                sensor_data = [ch0.value, ch1.value, ch2.value, ch3.value]
             except Exception as e:
                 logger.error(f"Gagal membaca sensor fisik: {e}")
                 time.sleep(2.0)
                 continue
 
             v0, v1, v2, v3 = sensor_data
-            logger.info(f"Sensors [MICS={v0:.2f}V, TGS={v1:.2f}V, MQ2={v2:.2f}V, MQ135={v3:.2f}V]")
+            logger.info(f"Sensors [MICS={v0} ADC, TGS={v1} ADC, MQ2={v2} ADC, MQ135={v3} ADC]")
 
             # ── Inferensi ANN ─────────────────────────────────────────────────
             status = run_inference(sensor_data)
